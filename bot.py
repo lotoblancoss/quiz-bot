@@ -33,7 +33,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 QUIZ_TIME = 30
-ANSWER_PAUSE = 5
+ANSWER_PAUSE = 3
 
 QUIZZES_DIR = Path("quizzes")
 
@@ -178,14 +178,14 @@ async def start(message: types.Message, state: FSMContext):
 async def help_command(message: types.Message):
     await message.answer(
         "📚 <b>Как пользоваться ботом</b>\n\n"
-        "• Нажмите /start, чтобы открыть список квизов\n"
-        "• Выберите тему и отвечайте на вопросы кнопками\n"
+        "• /start — открыть список квизов\n"
+        "• /stop — остановить текущий квиз\n"
+        "• /help — помощь\n\n"
         "• На каждый вопрос даётся 30 секунд\n"
         "• После ответа показывается пояснение\n"
         "• В рейтинг идёт только первое прохождение",
-        parse_mode="HTML",
+        parse_mode="HTML"
     )
-
 
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
@@ -478,9 +478,9 @@ async def set_main_menu():
     commands = [
         BotCommand(command="start", description="Открыть список квизов"),
         BotCommand(command="help", description="Как пользоваться ботом"),
+        BotCommand(command="stop", description="Остановить текущий квиз"),
     ]
     await bot.set_my_commands(commands)
-
 
 async def main():
     init_db()
