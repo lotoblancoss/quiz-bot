@@ -8,7 +8,7 @@ import sqlite3
 from html import escape
 from pathlib import Path
 from typing import Any
-
+from database import init_db, save_result, get_rank, get_all_results, get_results_by_quiz
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -27,6 +27,7 @@ from database import init_db, save_result, get_rank
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=BOT_TOKEN)
@@ -176,16 +177,19 @@ async def start(message: types.Message, state: FSMContext):
 
 @dp.message(Command("help"))
 async def help_command(message: types.Message):
-    await message.answer(
+    text = (
         "📚 <b>Как пользоваться ботом</b>\n\n"
         "• /start — открыть список квизов\n"
         "• /stop — остановить текущий квиз\n"
         "• /help — помощь\n\n"
         "• На каждый вопрос даётся 30 секунд\n"
         "• После ответа показывается пояснение\n"
-        "• В рейтинг идёт только первое прохождение",
-        parse_mode="HTML"
+        "• В рейтинг идёт только первое прохождение"
+        "Для администратора:\n"
+        "• /results — последние результаты игроков\n"
+        "• /quiz_results quiz_id — результаты по конкретному квизу\n\n"
     )
+    await message.answer(text, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
@@ -425,6 +429,7 @@ async def finish_quiz(message: types.Message, state: FSMContext):
         save_result(
             user_id=user.id,
             name=user.full_name,
+            username=user.username or "",
             quiz_id=data["quiz_id"],
             score=correct,
             total=total,
@@ -472,7 +477,83 @@ async def finish_quiz(message: types.Message, state: FSMContext):
 
     await message.answer(text, parse_mode="HTML")
     await state.clear()
+@dp.message(Command("results"))
+async def admin_results(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Эта команда только для администратора")
+        return
 
+    rows = get_all_results(limit=50)
+
+    if not rows:
+        await message.answer("Пока нет результатов.")
+        return
+
+    lines = ["📊 <b>Последние результаты:</b>\n"]
+
+    for row in rows:
+        name, username, quiz_id, score, total, time_taken, created_at = row
+        user_text = name
+        if username:
+            user_text += f" (@{username})"
+
+        lines.append(
+            f"👤 <b>{escape(user_text)}</b>\n"
+            f"🎮 Квиз: <code>{escape(quiz_id)}</code>\n"
+            f"🏆 {score}/{total}\n"
+            f"⏱ {int(time_taken)} сек\n"
+            f"🕒 {escape(created_at)}\n"
+        )
+
+    text = "\n".join(lines)
+
+    # Telegram не любит слишком длинные сообщения
+    if len(text) > 4000:
+        chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+        for chunk in chunks:
+            await message.answer(chunk, parse_mode="HTML")
+    else:
+        await message.answer(text, parse_mode="HTML")
+        
+@dp.message(Command("quiz_results"))
+async def admin_quiz_results(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Эта команда только для администратора")
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Напиши так: /quiz_results got_s1")
+        return
+
+    quiz_id = parts[1].strip()
+    rows = get_results_by_quiz(quiz_id, limit=50)
+
+    if not rows:
+        await message.answer("По этому квизу результатов пока нет.")
+        return
+
+    lines = [f"🏆 <b>Результаты по квизу {escape(quiz_id)}</b>\n"]
+
+    for i, row in enumerate(rows, start=1):
+        name, username, score, total, time_taken, created_at = row
+        user_text = name
+        if username:
+            user_text += f" (@{username})"
+
+        lines.append(
+            f"{i}. <b>{escape(user_text)}</b> — {score}/{total}, "
+            f"{int(time_taken)} сек, {escape(created_at)}"
+        )
+
+    text = "\n".join(lines)
+
+    if len(text) > 4000:
+        chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+        for chunk in chunks:
+            await message.answer(chunk, parse_mode="HTML")
+    else:
+        await message.answer(text, parse_mode="HTML")
 
 async def set_main_menu():
     commands = [
