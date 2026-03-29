@@ -184,10 +184,10 @@ async def help_command(message: types.Message):
         "• /help — помощь\n\n"
         "• На каждый вопрос даётся 30 секунд\n"
         "• После ответа показывается пояснение\n"
-        "• В рейтинг идёт только первое прохождение"
+        "• В рейтинг идёт только первое прохождение\n\n"
         "Для администратора:\n"
         "• /results — последние результаты игроков\n"
-        "• /quiz_results quiz_id — результаты по конкретному квизу\n\n"
+        "• /quiz_results quiz_id — результаты по конкретному квизу\n"
     )
     await message.answer(text, parse_mode="HTML")
     
@@ -206,6 +206,17 @@ async def stop_quiz(message: types.Message, state: FSMContext):
         "Чтобы начать заново, нажмите /start",
         parse_mode="HTML"
     )
+@dp.message(Command("reset_db"))
+async def reset_db(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ Только для администратора")
+        return
+
+    if os.path.exists("results.db"):
+        os.remove("results.db")
+        await message.answer("🧨 База удалена")
+    else:
+        await message.answer("База не найдена")
 
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
