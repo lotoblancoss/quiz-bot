@@ -371,9 +371,7 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         photo = FSInputFile(q["answer_image"])
         await callback.message.answer_photo(
             photo=photo,
-            caption=(
-                f"Правильный ответ: <b>{escape(correct)}</b>"
-            ),
+            caption=f"Правильный ответ: <b>{escape(correct)}</b>",
             parse_mode="HTML"
         )
 
