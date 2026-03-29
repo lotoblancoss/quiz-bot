@@ -68,18 +68,26 @@ def validate_quiz_data(quiz_id: str, quiz_data: dict[str, Any]) -> bool:
                 return False
 
         if not isinstance(q["options"], list) or len(q["options"]) < 2:
-            logger.warning("Квиз %s, вопрос %s: options пустой или слишком короткий", quiz_id, i)
+            logger.warning(
+                "Квиз %s, вопрос %s: options пустой или слишком короткий",
+                quiz_id,
+                i,
+            )
             return False
 
         if q["answer"] not in q["options"]:
-            logger.warning("Квиз %s, вопрос %s: answer отсутствует в options", quiz_id, i)
+            logger.warning(
+                "Квиз %s, вопрос %s: answer отсутствует в options",
+                quiz_id,
+                i,
+            )
             return False
 
     return True
 
 
-def load_all_quizzes():
-    quizzes = {}
+def load_all_quizzes() -> dict[str, dict[str, Any]]:
+    quizzes: dict[str, dict[str, Any]] = {}
     QUIZZES_DIR.mkdir(exist_ok=True)
 
     for quiz_file in QUIZZES_DIR.glob("*.json"):
@@ -104,14 +112,14 @@ def load_all_quizzes():
 quizzes = load_all_quizzes()
 
 
-def build_quiz_menu():
+def build_quiz_menu() -> InlineKeyboardMarkup:
     keyboard = []
 
     for quiz_id, quiz_data in quizzes.items():
         keyboard.append([
             InlineKeyboardButton(
                 text=quiz_data.get("name", quiz_id),
-                callback_data=f"quiz:{quiz_id}"
+                callback_data=f"quiz:{quiz_id}",
             )
         ])
 
@@ -119,23 +127,23 @@ def build_quiz_menu():
         keyboard.append([
             InlineKeyboardButton(
                 text="🎲 Случайный квиз",
-                callback_data="quiz:random"
+                callback_data="quiz:random",
             )
         ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def build_answers_keyboard(options, question_index):
+def build_answers_keyboard(options: list[str], question_index: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=o, callback_data=f"answer:{question_index}:{i}")]
-            for i, o in enumerate(options)
+            [InlineKeyboardButton(text=option, callback_data=f"answer:{question_index}:{i}")]
+            for i, option in enumerate(options)
         ]
     )
 
 
-def prepare_questions(quiz_data):
+def prepare_questions(quiz_data: dict[str, Any]) -> list[dict[str, Any]]:
     prepared = []
 
     for q in quiz_data["questions"]:
@@ -148,7 +156,7 @@ def prepare_questions(quiz_data):
             "correct_index": options.index(q["answer"]),
             "explanation": q.get("explanation", ""),
             "image": q.get("image"),
-            "answer_image": q.get("answer_image")
+            "answer_image": q.get("answer_image"),
         })
 
     random.shuffle(prepared)
@@ -175,7 +183,7 @@ async def help_command(message: types.Message):
         "• На каждый вопрос даётся 30 секунд\n"
         "• После ответа показывается пояснение\n"
         "• В рейтинг идёт только первое прохождение",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
 
@@ -206,7 +214,7 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
         correct_answers=0,
         answered_questions=0,
         total_questions=len(questions),
-        start_time=time.time()
+        start_time=time.time(),
     )
 
     description = quiz_data.get("description", "")
@@ -235,6 +243,12 @@ async def send_next_question(message: types.Message, state: FSMContext):
     q = questions[current]
     await state.update_data(current_question_data=q)
 
+    options = q.get("options", [])
+    if not options:
+        await message.answer("❌ Ошибка: у вопроса нет вариантов ответа.")
+        await state.clear()
+        return
+
     text = (
         f"❓ <b>Вопрос {current + 1}/{len(questions)}</b>\n"
         f"⏳ <b>30 секунд</b>\n\n"
@@ -246,14 +260,14 @@ async def send_next_question(message: types.Message, state: FSMContext):
         msg = await message.answer_photo(
             photo=photo,
             caption=text,
-            reply_markup=build_answers_keyboard(q["options"], current),
-            parse_mode="HTML"
+            reply_markup=build_answers_keyboard(options, current),
+            parse_mode="HTML",
         )
     else:
         msg = await message.answer(
             text,
-            reply_markup=build_answers_keyboard(q["options"], current),
-            parse_mode="HTML"
+            reply_markup=build_answers_keyboard(options, current),
+            parse_mode="HTML",
         )
 
     asyncio.create_task(question_timer(msg, state, current))
@@ -279,8 +293,8 @@ async def question_timer(message: types.Message, state: FSMContext, index: int):
                     parse_mode="HTML",
                     reply_markup=build_answers_keyboard(
                         data["current_question_data"]["options"],
-                        index
-                    )
+                        index,
+                    ),
                 )
             else:
                 await message.edit_text(
@@ -290,8 +304,8 @@ async def question_timer(message: types.Message, state: FSMContext, index: int):
                     parse_mode="HTML",
                     reply_markup=build_answers_keyboard(
                         data["current_question_data"]["options"],
-                        index
-                    )
+                        index,
+                    ),
                 )
         except Exception:
             pass
@@ -339,12 +353,13 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Вопрос не найден", show_alert=True)
         return
 
-    if not (0 <= selected < len(q["options"])):
+    options = q.get("options", [])
+    if not (0 <= selected < len(options)):
         await callback.answer("Некорректный вариант", show_alert=True)
         return
 
-    chosen = q["options"][selected]
-    correct = q["options"][q["correct_index"]]
+    chosen = options[selected]
+    correct = options[q["correct_index"]]
     explanation = q.get("explanation", "")
 
     await state.update_data(
@@ -372,7 +387,7 @@ async def answer(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer_photo(
             photo=photo,
             caption=f"Правильный ответ: <b>{escape(correct)}</b>",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
     await state.update_data(current_question=current_index + 1)
@@ -413,7 +428,7 @@ async def finish_quiz(message: types.Message, state: FSMContext):
             quiz_id=data["quiz_id"],
             score=correct,
             total=total,
-            time_taken=time_taken
+            time_taken=time_taken,
         )
         rating_score = correct
         rating_time = time_taken
@@ -426,7 +441,7 @@ async def finish_quiz(message: types.Message, state: FSMContext):
 
     cur.execute(
         "SELECT COUNT(*) FROM results WHERE quiz_id = ?",
-        (data["quiz_id"],)
+        (data["quiz_id"],),
     )
     total_players = cur.fetchone()[0]
 
