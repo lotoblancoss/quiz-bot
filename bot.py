@@ -190,6 +190,22 @@ async def help_command(message: types.Message):
         "• /quiz_results quiz_id — результаты по конкретному квизу\n\n"
     )
     await message.answer(text, parse_mode="HTML")
+    
+@dp.message(Command("stop"))
+async def stop_quiz(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+
+    if current_state != QuizStates.playing.state:
+        await message.answer("❗ Сейчас нет активного квиза")
+        return
+
+    await state.clear()
+
+    await message.answer(
+        "⛔ <b>Квиз остановлен</b>\n\n"
+        "Чтобы начать заново, нажмите /start",
+        parse_mode="HTML"
+    )
 
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
