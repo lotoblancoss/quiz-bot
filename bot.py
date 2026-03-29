@@ -206,17 +206,6 @@ async def stop_quiz(message: types.Message, state: FSMContext):
         "Чтобы начать заново, нажмите /start",
         parse_mode="HTML"
     )
-@dp.message(Command("reset_db"))
-async def reset_db(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("⛔ Только для администратора")
-        return
-
-    if os.path.exists("results.db"):
-        os.remove("results.db")
-        await message.answer("🧨 База удалена")
-    else:
-        await message.answer("База не найдена")
 
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
