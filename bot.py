@@ -477,6 +477,9 @@ async def finish_quiz(message: types.Message, state: FSMContext):
 
     await message.answer(text, parse_mode="HTML")
     await state.clear()
+@dp.message(Command("myid"))
+async def myid(message: types.Message):
+    await message.answer(f"Ваш ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
 @dp.message(Command("results"))
 async def admin_results(message: types.Message):
     if message.from_user.id != ADMIN_ID:
