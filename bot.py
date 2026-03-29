@@ -5,7 +5,6 @@ import logging
 import random
 import time
 import sqlite3
-from aiogram.types import FSInputFile
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,13 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery,
+    FSInputFile,
+    BotCommand,
+)
 
 from database import init_db, save_result, get_rank
 
@@ -28,15 +33,15 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 QUIZ_TIME = 30
+ANSWER_PAUSE = 5
+
+QUIZZES_DIR = Path("quizzes")
 
 
 class QuizStates(StatesGroup):
     choosing_quiz = State()
     playing = State()
     finished = State()
-
-
-QUIZZES_DIR = Path("quizzes")
 
 
 def validate_quiz_data(quiz_id: str, quiz_data: dict[str, Any]) -> bool:
@@ -161,6 +166,19 @@ async def start(message: types.Message, state: FSMContext):
     await message.answer("📚 Выберите квиз:", reply_markup=build_quiz_menu())
 
 
+@dp.message(Command("help"))
+async def help_command(message: types.Message):
+    await message.answer(
+        "📚 <b>Как пользоваться ботом</b>\n\n"
+        "• Нажмите /start, чтобы открыть список квизов\n"
+        "• Выберите тему и отвечайте на вопросы кнопками\n"
+        "• На каждый вопрос даётся 30 секунд\n"
+        "• После ответа показывается пояснение\n"
+        "• В рейтинг идёт только первое прохождение",
+        parse_mode="HTML"
+    )
+
+
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
     action = callback.data.split(":")[1]
@@ -225,7 +243,6 @@ async def send_next_question(message: types.Message, state: FSMContext):
 
     if q.get("image"):
         photo = FSInputFile(q["image"])
-
         msg = await message.answer_photo(
             photo=photo,
             caption=text,
@@ -292,6 +309,7 @@ async def question_timer(message: types.Message, state: FSMContext, index: int):
         await message.answer(text, parse_mode="HTML")
 
         await state.update_data(current_question=index + 1)
+        await asyncio.sleep(ANSWER_PAUSE)
         await send_next_question(message, state)
 
 
@@ -351,11 +369,9 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 
     if q.get("answer_image"):
         photo = FSInputFile(q["answer_image"])
-
         await callback.message.answer_photo(
             photo=photo,
             caption=(
-                "🖼 <b>Оригинальный кадр</b>\n\n"
                 f"Правильный ответ: <b>{escape(correct)}</b>"
             ),
             parse_mode="HTML"
@@ -363,8 +379,9 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(current_question=current_index + 1)
 
-    await send_next_question(callback.message, state)
     await callback.answer()
+    await asyncio.sleep(ANSWER_PAUSE)
+    await send_next_question(callback.message, state)
 
 
 async def finish_quiz(message: types.Message, state: FSMContext):
@@ -444,8 +461,17 @@ async def finish_quiz(message: types.Message, state: FSMContext):
     await state.clear()
 
 
+async def set_main_menu():
+    commands = [
+        BotCommand(command="start", description="Открыть список квизов"),
+        BotCommand(command="help", description="Как пользоваться ботом"),
+    ]
+    await bot.set_my_commands(commands)
+
+
 async def main():
     init_db()
+    await set_main_menu()
     print("Бот запущен")
     await dp.start_polling(bot)
 
