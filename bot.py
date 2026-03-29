@@ -426,6 +426,7 @@ async def finish_quiz(message: types.Message, state: FSMContext):
     existing_result = cur.fetchone()
 
     if existing_result is None:
+        user = message.from_user
         save_result(
             user_id=user.id,
             name=user.full_name,
@@ -514,7 +515,7 @@ async def admin_results(message: types.Message):
             await message.answer(chunk, parse_mode="HTML")
     else:
         await message.answer(text, parse_mode="HTML")
-        
+
 @dp.message(Command("quiz_results"))
 async def admin_quiz_results(message: types.Message):
     if message.from_user.id != ADMIN_ID:
