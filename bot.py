@@ -442,7 +442,7 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 
     chosen = options[selected]
     correct = options[q["correct_index"]]
-    explanation = q.get("explanation", "")
+    explanation = (q.get("explanation") or "").strip()
 
     await state.update_data(
         answered_questions=data["answered_questions"] + 1
