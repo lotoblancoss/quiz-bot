@@ -386,6 +386,15 @@ async def question_timer(message: types.Message, state: FSMContext, index: int):
         q = data.get("current_question_data", {})
         explanation = q.get("explanation", "")
 
+        # убираем кнопки у старого вопроса
+        try:
+            if getattr(message, "photo", None):
+                await message.edit_reply_markup(reply_markup=None)
+            else:
+                await message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+
         text = "⏰ <b>Время вышло!</b>"
         if explanation:
             text += f"\n\n📝 <b>Пояснение:</b> {escape(explanation)}"
@@ -457,11 +466,7 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 
     if q.get("answer_image"):
         photo = FSInputFile(q["answer_image"])
-        await callback.message.answer_photo(
-            photo=photo,
-            caption=f"Правильный ответ: <b>{escape(correct)}</b>",
-            parse_mode="HTML",
-        )
+        await callback.message.answer_photo(photo=photo)
 
     await state.update_data(current_question=current_index + 1)
 
