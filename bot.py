@@ -22,8 +22,6 @@ from aiogram.types import (
     BotCommand,
 )
 
-from database import init_db, save_result, get_rank
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-QUIZ_TIME = 30
+QUIZ_TIME = 20
 ANSWER_PAUSE = 3
 
 QUIZZES_DIR = Path("quizzes")
@@ -134,6 +132,13 @@ def build_quiz_menu() -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
+def build_start_quiz_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⚔️ В атаку, Мейлис", callback_data="quiz:start")],
+            [InlineKeyboardButton(text="🐺 Не сегодня", callback_data="quiz:cancel")],
+        ]
+    )
 
 def build_answers_keyboard(options: list[str], question_index: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -182,7 +187,7 @@ async def help_command(message: types.Message):
         "• /start — открыть список квизов\n"
         "• /stop — остановить текущий квиз\n"
         "• /help — помощь\n\n"
-        "• На каждый вопрос даётся 30 секунд\n"
+        "• На каждый вопрос даётся 20 секунд\n"
         "• После ответа показывается пояснение\n"
         "• В рейтинг идёт только первое прохождение\n\n"
         "Для администратора:\n"
@@ -190,7 +195,8 @@ async def help_command(message: types.Message):
         "• /quiz_results quiz_id — результаты по конкретному квизу\n"
     )
     await message.answer(text, parse_mode="HTML")
-    
+
+
 @dp.message(Command("stop"))
 async def stop_quiz(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -207,6 +213,7 @@ async def stop_quiz(message: types.Message, state: FSMContext):
         parse_mode="HTML"
     )
 
+
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
     action = callback.data.split(":")[1]
@@ -216,6 +223,8 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
             await callback.answer("Нет доступных квизов", show_alert=True)
             return
         quiz_id = random.choice(list(quizzes.keys()))
+    elif action in ("start", "cancel"):
+        return
     else:
         quiz_id = action
 
@@ -226,7 +235,9 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
     quiz_data = quizzes[quiz_id]
     questions = prepare_questions(quiz_data)
 
-    await state.set_state(QuizStates.playing)
+    user = callback.from_user
+
+    await state.set_state(QuizStates.choosing_quiz)
     await state.update_data(
         quiz_id=quiz_id,
         questions=questions,
@@ -235,20 +246,49 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
         answered_questions=0,
         total_questions=len(questions),
         start_time=time.time(),
+        player_id=user.id,
+        player_name=user.full_name,
+        player_username=user.username or "",
     )
 
     description = quiz_data.get("description", "")
     text = (
         f"🐉 <b>{escape(quiz_data.get('name', quiz_id))}</b>\n\n"
         f"{escape(description)}\n\n"
-        f"⏳ 30 секунд на вопрос\n\n"
-        f"Готовы?"
+        f"🗡 <i>«Когда играешь в игру престолов, ты либо побеждаешь, либо умираешь. Третьего не дано.»</i>\n\n"
+        f"⏳ У тебя есть <b>20 секунд</b> на каждый вопрос.\n"
+        f"<b>Готов вступить в игру?</b>"
     )
 
-    await callback.message.answer(text, parse_mode="HTML")
+    await callback.message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=build_start_quiz_keyboard()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "quiz:start")
+async def start_selected_quiz(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+
+    if not data or "quiz_id" not in data:
+        await callback.answer("Квиз не выбран", show_alert=True)
+        return
+
+    await state.set_state(QuizStates.playing)
+    await callback.message.answer("⚔️ <b>В атаку, Мейлис!</b>", parse_mode="HTML")
     await send_next_question(callback.message, state)
     await callback.answer()
 
+
+@dp.callback_query(F.data == "quiz:cancel")
+async def cancel_selected_quiz(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.answer(
+        "🐺 <b>Не сегодня.</b>\n\nКогда будете готовы — нажмите /start",
+        parse_mode="HTML"
+    )
+    await callback.answer()
 
 async def send_next_question(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -271,7 +311,7 @@ async def send_next_question(message: types.Message, state: FSMContext):
 
     text = (
         f"❓ <b>Вопрос {current + 1}/{len(questions)}</b>\n"
-        f"⏳ <b>30 секунд</b>\n\n"
+        f"⏳ <b>20 секунд</b>\n\n"
         f"{escape(q['question'])}"
     )
 
@@ -298,6 +338,8 @@ async def question_timer(message: types.Message, state: FSMContext, index: int):
         await asyncio.sleep(1)
 
         data = await state.get_data()
+        if not data or "current_question" not in data:
+            return
 
         if data.get("current_question") != index:
             return
@@ -429,7 +471,9 @@ async def finish_quiz(message: types.Message, state: FSMContext):
 
     time_taken = time.time() - data["start_time"]
 
-    user = message.from_user
+    player_id = data["player_id"]
+    player_name = data["player_name"]
+    player_username = data["player_username"]
 
     conn = sqlite3.connect("results.db")
     cur = conn.cursor()
@@ -437,16 +481,15 @@ async def finish_quiz(message: types.Message, state: FSMContext):
     cur.execute("""
         SELECT score, time_taken FROM results
         WHERE user_id = ? AND quiz_id = ?
-    """, (user.id, data["quiz_id"]))
+    """, (player_id, data["quiz_id"]))
 
     existing_result = cur.fetchone()
 
     if existing_result is None:
-        user = message.from_user
         save_result(
-            user_id=user.id,
-            name=user.full_name,
-            username=user.username or "",
+            user_id=player_id,
+            name=player_name,
+            username=player_username,
             quiz_id=data["quiz_id"],
             score=correct,
             total=total,
@@ -494,6 +537,8 @@ async def finish_quiz(message: types.Message, state: FSMContext):
 
     await message.answer(text, parse_mode="HTML")
     await state.clear()
+
+
 @dp.message(Command("results"))
 async def admin_results(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -526,11 +571,12 @@ async def admin_results(message: types.Message):
 
     # Telegram не любит слишком длинные сообщения
     if len(text) > 4000:
-        chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+        chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)]
         for chunk in chunks:
             await message.answer(chunk, parse_mode="HTML")
     else:
         await message.answer(text, parse_mode="HTML")
+
 
 @dp.message(Command("quiz_results"))
 async def admin_quiz_results(message: types.Message):
@@ -540,7 +586,7 @@ async def admin_quiz_results(message: types.Message):
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer("Напиши так: /quiz_results got_s1")
+        await message.answer("Напиши так: /quiz_results got")
         return
 
     quiz_id = parts[1].strip()
@@ -566,11 +612,12 @@ async def admin_quiz_results(message: types.Message):
     text = "\n".join(lines)
 
     if len(text) > 4000:
-        chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+        chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)]
         for chunk in chunks:
             await message.answer(chunk, parse_mode="HTML")
     else:
         await message.answer(text, parse_mode="HTML")
+
 
 async def set_main_menu():
     commands = [
@@ -579,6 +626,7 @@ async def set_main_menu():
         BotCommand(command="stop", description="Остановить текущий квиз"),
     ]
     await bot.set_my_commands(commands)
+
 
 async def main():
     init_db()
