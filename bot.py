@@ -33,8 +33,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-QUIZ_TIME = 20
-ANSWER_PAUSE = 3
+QUIZ_TIME = 30
+ANSWER_PAUSE = 4
 
 QUIZZES_DIR = Path("quizzes")
 
@@ -191,7 +191,7 @@ async def help_command(message: types.Message):
         "• /start — открыть список квизов\n"
         "• /stop — остановить текущий квиз\n"
         "• /help — помощь\n\n"
-        "• На каждый вопрос даётся 20 секунд\n"
+        "• На каждый вопрос даётся 30 секунд\n"
         "• После ответа показывается пояснение\n"
         "• В рейтинг идёт только первое прохождение\n\n"
         "Для администратора:\n"
@@ -257,7 +257,7 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
         f"🐉 <b>{escape(quiz_data.get('name', quiz_id))}</b>\n\n"
         f"{escape(description)}\n\n"
         f"🗡 <i>«Когда играешь в игру престолов, ты либо побеждаешь, либо умираешь. Третьего не дано.»</i>\n\n"
-        f"⏳ У тебя есть <b>20 секунд</b> на каждый вопрос.\n\n"
+        f"⏳ У тебя есть <b>30 секунд</b> на каждый вопрос.\n\n"
         f"<b>Готов вступить в игру?</b>"
     )
 
@@ -317,7 +317,7 @@ async def send_next_question(message: types.Message, state: FSMContext):
 
     text = (
         f"❓ <b>Вопрос {current + 1}/{len(questions)}</b>\n"
-        f"⏳ <b>20 секунд</b>\n\n"
+        f"⏳ <b>30 секунд</b>\n\n"
         f"{escape(q['question'])}"
     )
 
