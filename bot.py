@@ -8,7 +8,7 @@ import sqlite3
 from html import escape
 from pathlib import Path
 from typing import Any
-from database import init_db, save_result, get_rank, get_all_results, get_results_by_quiz
+
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -21,6 +21,8 @@ from aiogram.types import (
     FSInputFile,
     BotCommand,
 )
+
+from database import init_db, save_result, get_rank, get_all_results, get_results_by_quiz
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -132,13 +134,15 @@ def build_quiz_menu() -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
+
 def build_start_quiz_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⚔️ В атаку, Мейлис", callback_data="quiz:start")],
-            [InlineKeyboardButton(text="🐺 Не сегодня", callback_data="quiz:cancel")],
+            [InlineKeyboardButton(text="⚔️ В атаку, Мейлис", callback_data="quiz_start_confirm")],
+            [InlineKeyboardButton(text="🐺 Не сегодня", callback_data="quiz_start_cancel")],
         ]
     )
+
 
 def build_answers_keyboard(options: list[str], question_index: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -148,17 +152,7 @@ def build_answers_keyboard(options: list[str], question_index: int) -> InlineKey
         ]
     )
 
-def clear_db():
-    conn = sqlite3.connect("results.db")
-    cur = conn.cursor()
 
-    cur.execute("DELETE FROM results")
-
-    conn.commit()
-    conn.close()
-
-    print("База очищена")
-    
 def prepare_questions(quiz_data: dict[str, Any]) -> list[dict[str, Any]]:
     prepared = []
 
@@ -211,7 +205,7 @@ async def help_command(message: types.Message):
 async def stop_quiz(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
 
-    if current_state != QuizStates.playing.state:
+    if current_state != QuizStates.playing.state and current_state != QuizStates.choosing_quiz.state:
         await message.answer("❗ Сейчас нет активного квиза")
         return
 
@@ -226,15 +220,13 @@ async def stop_quiz(message: types.Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("quiz:"))
 async def choose_quiz(callback: CallbackQuery, state: FSMContext):
-    action = callback.data.split(":")[1]
+    action = callback.data.split(":", 1)[1]
 
     if action == "random":
         if not quizzes:
             await callback.answer("Нет доступных квизов", show_alert=True)
             return
         quiz_id = random.choice(list(quizzes.keys()))
-    elif action in ("start", "cancel"):
-        return
     else:
         quiz_id = action
 
@@ -244,7 +236,6 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
 
     quiz_data = quizzes[quiz_id]
     questions = prepare_questions(quiz_data)
-
     user = callback.from_user
 
     await state.set_state(QuizStates.choosing_quiz)
@@ -266,7 +257,7 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
         f"🐉 <b>{escape(quiz_data.get('name', quiz_id))}</b>\n\n"
         f"{escape(description)}\n\n"
         f"🗡 <i>«Когда играешь в игру престолов, ты либо побеждаешь, либо умираешь. Третьего не дано.»</i>\n\n"
-        f"⏳ У тебя есть <b>20 секунд</b> на каждый вопрос.\n"
+        f"⏳ У тебя есть <b>20 секунд</b> на каждый вопрос.\n\n"
         f"<b>Готов вступить в игру?</b>"
     )
 
@@ -277,7 +268,8 @@ async def choose_quiz(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-@dp.callback_query(F.data == "quiz:start")
+
+@dp.callback_query(F.data == "quiz_start_confirm")
 async def start_selected_quiz(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
@@ -291,7 +283,7 @@ async def start_selected_quiz(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@dp.callback_query(F.data == "quiz:cancel")
+@dp.callback_query(F.data == "quiz_start_cancel")
 async def cancel_selected_quiz(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer(
@@ -300,8 +292,12 @@ async def cancel_selected_quiz(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+
 async def send_next_question(message: types.Message, state: FSMContext):
     data = await state.get_data()
+
+    if not data or "current_question" not in data:
+        return
 
     current = data["current_question"]
     questions = data["questions"]
@@ -383,6 +379,8 @@ async def question_timer(message: types.Message, state: FSMContext, index: int):
             pass
 
     data = await state.get_data()
+    if not data or "current_question" not in data:
+        return
 
     if data.get("current_question") == index:
         q = data.get("current_question_data", {})
@@ -402,6 +400,9 @@ async def question_timer(message: types.Message, state: FSMContext, index: int):
 @dp.callback_query(F.data.startswith("answer:"))
 async def answer(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+    if not data or "current_question" not in data:
+        await callback.answer("Квиз уже завершён", show_alert=True)
+        return
 
     parts = callback.data.split(":")
     if len(parts) != 3:
@@ -471,6 +472,8 @@ async def answer(callback: CallbackQuery, state: FSMContext):
 
 async def finish_quiz(message: types.Message, state: FSMContext):
     data = await state.get_data()
+    if not data:
+        return
 
     correct = data["correct_answers"]
     total = data["total_questions"]
@@ -579,7 +582,6 @@ async def admin_results(message: types.Message):
 
     text = "\n".join(lines)
 
-    # Telegram не любит слишком длинные сообщения
     if len(text) > 4000:
         chunks = [text[i:i + 4000] for i in range(0, len(text), 4000)]
         for chunk in chunks:
@@ -640,7 +642,6 @@ async def set_main_menu():
 
 async def main():
     init_db()
-    clear_db()
     await set_main_menu()
     print("Бот запущен")
     await dp.start_polling(bot)
