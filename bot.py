@@ -148,7 +148,17 @@ def build_answers_keyboard(options: list[str], question_index: int) -> InlineKey
         ]
     )
 
+def clear_db():
+    conn = sqlite3.connect("results.db")
+    cur = conn.cursor()
 
+    cur.execute("DELETE FROM results")
+
+    conn.commit()
+    conn.close()
+
+    print("База очищена")
+    
 def prepare_questions(quiz_data: dict[str, Any]) -> list[dict[str, Any]]:
     prepared = []
 
@@ -630,6 +640,7 @@ async def set_main_menu():
 
 async def main():
     init_db()
+    clear_db()
     await set_main_menu()
     print("Бот запущен")
     await dp.start_polling(bot)
